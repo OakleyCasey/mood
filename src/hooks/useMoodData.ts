@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import {
   DEFAULT_PREFERENCES,
@@ -29,7 +29,9 @@ export function useMoodData() {
   const [preferences, setPreferences] = useState<SubjectPreference[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState("");
+  const hasLoadedRef = useRef(false);
 
   const useRemote = isSupabaseConfigured && Boolean(user);
   const userId = useRemote ? user!.id : LOCAL_USER_ID;
@@ -37,12 +39,36 @@ export function useMoodData() {
   useEffect(() => {
     if (!supabase) return;
 
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
-      setAuthReady(true);
-    });
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const authError =
+      searchParams.get("error_description") ??
+      hashParams.get("error_description") ??
+      searchParams.get("error") ??
+      hashParams.get("error");
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (authError) {
+      setError(authError);
+    }
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setUser(data.session?.user ?? null);
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "登录状态读取失败");
+      })
+      .finally(() => {
+        setAuthReady(true);
+      });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+        hasLoadedRef.current = false;
+        setIsLoading(true);
+      }
+
       setUser(session?.user ?? null);
       setAuthReady(true);
     });
@@ -53,7 +79,14 @@ export function useMoodData() {
   const refresh = useCallback(async () => {
     if (!authReady) return;
 
-    setIsLoading(true);
+    const isInitialLoad = !hasLoadedRef.current;
+
+    if (isInitialLoad) {
+      setIsLoading(true);
+    } else {
+      setIsSyncing(true);
+    }
+
     setError("");
 
     try {
@@ -76,7 +109,9 @@ export function useMoodData() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "数据加载失败");
     } finally {
+      hasLoadedRef.current = true;
       setIsLoading(false);
+      setIsSyncing(false);
     }
   }, [authReady, useRemote, userId]);
 
@@ -181,6 +216,7 @@ export function useMoodData() {
     selectedPreference,
     selectedSubjectId,
     isLoading,
+    isSyncing,
     error,
     setSelectedSubjectId,
     addSubject,

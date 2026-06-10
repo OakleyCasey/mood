@@ -38,11 +38,24 @@ function App() {
     subpageContentRef.current?.scrollTo({ top: 0 });
   }, [view, mood.selectedSubjectId, recordFilter]);
 
-  if (mood.isLoading || !mood.selectedSubject || !mood.selectedPreference) {
+  if (mood.isLoading) {
     return (
       <main className="app-shell atmosphere-balanced">
         <div className="phone-frame loading-screen">
           <p>正在整理你的情绪池...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!mood.selectedSubject || !mood.selectedPreference) {
+    return (
+      <main className="app-shell atmosphere-balanced">
+        <div className="phone-frame loading-screen">
+          <div className="empty-state">
+            <h1>暂时没有打开情绪池</h1>
+            <p>{mood.error || "登录回跳还没有完成，刷新页面后再试一次。"}</p>
+          </div>
         </div>
       </main>
     );
@@ -112,6 +125,8 @@ function App() {
             </button>
           )}
         </header>
+
+        {mood.isSyncing ? <span className="sync-indicator">同步中</span> : null}
 
         {view === "records" ? (
           <div className="subpage-controls">
